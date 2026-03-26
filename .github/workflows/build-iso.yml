@@ -1,0 +1,69 @@
+# .github/workflows/build-iso.yml
+
+name: Build Custom Windows 11 ISO
+
+# This allows you to run the workflow manually from the Actions tab
+on:
+  workflow_dispatch:
+    inputs:
+      iso_url:
+        description: 'Windows 11 ISO Direct Download URL'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Maximize build space
+        run: |
+          # Free up disk space by removing pre-installed tools
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo swapoff /swapfile
+          sudo rm -f /swapfile
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full wimtools genisoimage
+
+      - name: Download Windows 11 ISO
+        run: |
+          echo "Downloading ISO from ${{ github.event.inputs.iso_url }}"
+          wget -O win11.iso "${{ github.event.inputs.iso_url }}"
+
+      - name: Extract ISO Contents
+        run: |
+          mkdir iso_extracted
+          7z x win11.iso -oiso_extracted
+
+      # --- This is where your customization happens ---
+      - name: Run Customization Scripts
+        run: |
+          echo "Applying customizations..."
+          # For example, you could run a script from your repo:
+          # if [ -f "./my_script.sh" ]; then
+          #   bash ./my_script.sh iso_extracted/
+          # fi
+          # Or modify the install.wim directly with wimlib
+          # wimupdate iso_extracted/sources/install.wim 1 < commands.txt
+
+      - name: Repackage into new ISO
+        run: |
+          # Note: This is a more robust command for creating a bootable UEFI ISO
+          genisoimage -b boot/etfsboot.com -no-emul-boot 
+            -c boot/boot.cat -iso-level 4 -J -l -D -N -joliet-long -relaxed-filenames 
+            -V "CUSTOM_WIN11" -udf -boot-load-size 8 
+            -o custom_win11.iso iso_extracted/
+
+      - name: Upload ISO as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-win11-iso
+          path: custom_win11.iso
+          retention-days: 7 # The artifact will be available for 7 days
